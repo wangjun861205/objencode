@@ -3,20 +3,22 @@ encode object to bytes and decode object from bytes
 
 ## usage
 
-import (
-  "objencode"
+  ```
+  import (
+    "objencode"
   )
  
- type Test struct {
-  Foo string
-  Bar int
+  type Test struct {
+    Foo string
+    Bar int
   }
   
- func main() {
-  t := &Test{"hello world", 10}
-  b, _ := objencode.Encode(t)
-  nt := &Test{}
-  _ := objencode.Decode(b, nt)
-  fmt.Println(nt.Foo)
-  fmt.Println(nt.Bar)
+  func main() {
+    t := &Test{"hello world", 10}
+    b, _ := objencode.Encode(t)
+    nt := &Test{}
+    _ := objencode.Decode(b, nt)
+    fmt.Println(nt.Foo)
+    fmt.Println(nt.Bar)
   }
+  ```
