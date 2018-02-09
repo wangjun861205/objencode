@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 	"io/ioutil"
 	"reflect"
 )
@@ -30,9 +31,10 @@ func Encode(i interface{}) ([]byte, error) {
 			}
 			subBuffer.Write(bContent)
 		}
-		length := make([]byte, 8)
-		binary.LittleEndian.PutUint64(length, uint64(subBuffer.Len()))
-		buffer.Write(length)
+		err := writeLength(subBuffer, buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write(subBuffer.Bytes())
 		return buffer.Bytes(), nil
 	case reflect.Array, reflect.Slice:
@@ -45,16 +47,18 @@ func Encode(i interface{}) ([]byte, error) {
 			}
 			subBuffer.Write(bContent)
 		}
-		length := make([]byte, 8)
-		binary.LittleEndian.PutUint64(length, uint64(subBuffer.Len()))
-		buffer.Write(length)
+		err := writeLength(subBuffer, buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write(subBuffer.Bytes())
 		return buffer.Bytes(), nil
 	case reflect.String:
 		s := val.Interface().(string)
-		length := make([]byte, 8)
-		binary.LittleEndian.PutUint64(length, uint64(len(s)))
-		buffer.Write(length)
+		err := writeLength(bytes.NewBuffer([]byte(s)), buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write([]byte(s))
 		return buffer.Bytes(), nil
 	case reflect.Map:
@@ -72,9 +76,10 @@ func Encode(i interface{}) ([]byte, error) {
 			}
 			subBuffer.Write(valContent)
 		}
-		length := make([]byte, 8)
-		binary.LittleEndian.PutUint64(length, uint64(subBuffer.Len()))
-		buffer.Write(length)
+		err := writeLength(subBuffer, buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write(subBuffer.Bytes())
 		return buffer.Bytes(), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -98,9 +103,10 @@ func Encode(i interface{}) ([]byte, error) {
 		if err != nil {
 			return []byte{}, err
 		}
-		length := make([]byte, 8)
-		length[0] = 8
-		buffer.Write(length)
+		err = writeLength(subBuffer, buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write(subBuffer.Bytes())
 		return buffer.Bytes(), nil
 	case reflect.Float32, reflect.Float64:
@@ -115,9 +121,10 @@ func Encode(i interface{}) ([]byte, error) {
 		}
 		subBuffer := bytes.NewBuffer(make([]byte, 0, 8))
 		binary.Write(subBuffer, binary.LittleEndian, f64)
-		length := make([]byte, 8)
-		length[0] = 8
-		buffer.Write(length)
+		err := writeLength(subBuffer, buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write(subBuffer.Bytes())
 		return buffer.Bytes(), nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
@@ -139,9 +146,10 @@ func Encode(i interface{}) ([]byte, error) {
 		if err != nil {
 			return []byte{}, err
 		}
-		length := make([]byte, 8)
-		length[0] = 8
-		buffer.Write(length)
+		err = writeLength(subBuffer, buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write(subBuffer.Bytes())
 		return buffer.Bytes(), nil
 	case reflect.Complex64, reflect.Complex128:
@@ -156,9 +164,10 @@ func Encode(i interface{}) ([]byte, error) {
 		}
 		subBuffer := bytes.NewBuffer(make([]byte, 0, 16))
 		binary.Write(subBuffer, binary.LittleEndian, c128)
-		length := make([]byte, 8)
-		length[0] = 16
-		buffer.Write(length)
+		err := writeLength(subBuffer, buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write(subBuffer.Bytes())
 		return buffer.Bytes(), nil
 	case reflect.Bool:
@@ -168,9 +177,10 @@ func Encode(i interface{}) ([]byte, error) {
 		if err != nil {
 			return []byte{}, err
 		}
-		length := make([]byte, 8)
-		length[0] = 1
-		buffer.Write(length)
+		err = writeLength(subBuffer, buffer)
+		if err != nil {
+			return []byte{}, err
+		}
 		buffer.Write(subBuffer.Bytes())
 		return buffer.Bytes(), nil
 	default:
@@ -232,6 +242,9 @@ func Decode(b []byte, obj interface{}) error {
 		for {
 			_, elemContent, elemRemain, err := readContent(b)
 			if err != nil {
+				if err == io.EOF {
+					break
+				}
 				return err
 			}
 			elem := reflect.New(elemType)
@@ -255,18 +268,21 @@ func Decode(b []byte, obj interface{}) error {
 		for {
 			_, keyContent, remain, err := readContent(b)
 			if err != nil {
-				return err
-			}
-			_, valContent, remain, err := readContent(remain)
-			if err != nil {
+				if err == io.EOF {
+					break
+				}
 				return err
 			}
 			newKey := reflect.New(keyType)
-			newVal := reflect.New(valType)
 			err = Decode(keyContent, newKey.Interface())
 			if err != nil {
 				return err
 			}
+			_, valContent, remain, err := readContent(remain)
+			if err != nil && err != io.EOF {
+				return err
+			}
+			newVal := reflect.New(valType)
 			err = Decode(valContent, newVal.Interface())
 			if err != nil {
 				return err
@@ -345,7 +361,11 @@ func readContent(b []byte) (int, []byte, []byte, error) {
 	if err != nil {
 		return 0, []byte{}, []byte{}, err
 	}
-	l, _ := binary.Uvarint(lenByte)
+	var l int64
+	err = binary.Read(bytes.NewReader(lenByte), binary.LittleEndian, &l)
+	if err != nil {
+		return 0, []byte{}, []byte{}, err
+	}
 	length := int(l)
 	content := make([]byte, length)
 	_, err = reader.Read(content)
@@ -357,4 +377,18 @@ func readContent(b []byte) (int, []byte, []byte, error) {
 		return 0, []byte{}, []byte{}, err
 	}
 	return length, content, remain, nil
+}
+
+func writeLength(rdBuf, wtBuf *bytes.Buffer) error {
+	length := int64(rdBuf.Len())
+	lenBuf := bytes.NewBuffer(make([]byte, 0))
+	err := binary.Write(lenBuf, binary.LittleEndian, length)
+	if err != nil {
+		return err
+	}
+	_, err = wtBuf.Write(lenBuf.Bytes())
+	if err != nil {
+		return err
+	}
+	return nil
 }

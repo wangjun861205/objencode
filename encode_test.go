@@ -2,34 +2,30 @@ package objencode
 
 import (
 	"fmt"
+	"goginx/http"
 	"testing"
 )
 
-type Test struct {
-	// X bool
-	// X int
-	// X string
-	// Y string
-	// Z map[string]string
-	X []byte
-	Y string
-}
-
 func TestEncode(t *testing.T) {
-	// test := Test{"test", "hello world", map[string]string{"a": "1", "b": "2"}}
-	test := Test{[]byte{1, 2, 3}, "hello world"}
-	b, _ := Encode(&test)
+	test := &http.HTTPRequest{
+		// RemoteAddr: [4]byte{127, 0, 0, 1},
+		// RemotePort: 12345,
+		Method:  "GET",
+		URI:     "/",
+		Version: "1.1",
+		Headers: make(map[string][]string),
+		Body:    []byte{},
+		Fd:      123,
+	}
+	test.Headers["Connection"] = []string{}
+	// test.Headers["User-Agent"] = []string{"User-Agent:Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.119 Safari/537.36"}
+	b, _ := Encode(test)
 	fmt.Println(b)
-	newTest := &Test{}
+	newTest := &http.HTTPRequest{}
 	err := Decode(b, newTest)
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
+		return
 	}
-	fmt.Println(newTest.X[1])
-	fmt.Println(newTest.Y)
-	// var a [24]byte
-	// copy(a[:], b)
-	// ptr := unsafe.Pointer(&a)
-	// newTest := *(*Test)(ptr)
-	// fmt.Println(newTest.X)
+	fmt.Println(newTest.RemotePort)
 }
